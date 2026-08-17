@@ -84,6 +84,16 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
 tbody tr{cursor:pointer}
 tbody tr:hover{background:var(--plane)}
 td .en{color:var(--ink);font-weight:550}
+.chevcell{width:30px;text-align:center;padding-left:6px;padding-right:0}
+.chev{border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;padding:4px 5px;border-radius:6px;line-height:1}
+tbody tr:hover .chev{color:var(--ink)}
+.celltext{user-select:text;-webkit-user-select:text}
+.copybtn{border:none;background:transparent;color:var(--muted);cursor:pointer;opacity:0;padding:2px 5px;border-radius:6px;margin-left:2px;vertical-align:middle;transition:opacity .12s}
+.copybtn svg{display:block}
+tbody tr:hover .copybtn{opacity:.55}
+.copybtn:hover{opacity:1;background:var(--grid);color:var(--ink)}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:var(--surface);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .18s,transform .18s;z-index:60;pointer-events:none;max-width:80vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .tag{font-size:11px;padding:2px 7px;border-radius:6px;border:1px solid var(--border);color:var(--ink-2);white-space:nowrap}
 .tag.l1{background:var(--s1soft);border-color:transparent}
 .tag.l2{background:var(--s2soft);border-color:transparent}
@@ -141,7 +151,7 @@ td .en{color:var(--ink);font-weight:550}
   <div class="card"><div id="lineChart"></div></div>
 
   <h2>Organizaciones</h2>
-  <p class="secnote">Ranking de quién <b>recibe</b> (donatarias) y quién <b>dona</b> (donantes). Haz clic en una fila para ver sus principales contrapartes.</p>
+  <p class="secnote">Ranking de quién <b>recibe</b> (donatarias) y quién <b>dona</b> (donantes). Usa el chevrón <b>▸</b> para desplegar las principales contrapartes de cada organización; el ícono de copiar (al pasar el cursor sobre el nombre o el RUT) copia ese dato al portapapeles. También puedes seleccionar el texto normalmente.</p>
   <div class="tabs">
     <div class="tab on" data-view="donatarias">🏛️ Reciben donaciones (donatarias)</div>
     <div class="tab" data-view="donantes">💸 Otorgan donaciones (donantes)</div>
@@ -186,6 +196,17 @@ const MM = n=>{ // millones with es-CL
   return m.toLocaleString('es-CL',{maximumFractionDigits:0})+' M';
 };
 const NUM = n=>n.toLocaleString('es-CL');
+const esc = s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COPYICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const toastEl=document.createElement('div');toastEl.className='toast';document.body.appendChild(toastEl);
+let _toastT;
+function showToast(m){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(_toastT);_toastT=setTimeout(()=>toastEl.classList.remove('on'),1500);}
+function copyText(t){
+  const done=()=>showToast('Copiado: '+t);
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done));}
+  else fallbackCopy(t,done);
+}
+function fallbackCopy(t,done){const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done&&done();}catch(e){}ta.remove();}
 const S1='var(--s1)',S2='var(--s2)';
 const leyColor = l => l==='19.885'?S1:S2;
 
@@ -294,20 +315,25 @@ function render(){
   });
   const shown=rows.slice(0,300);
   // header
-  $('#thead').innerHTML='<tr>'+c.cols.map(col=>`<th class="${col.num?'num':''}" data-k="${col.k}">${col.t}${sortKey===col.k?(sortDir<0?' ▾':' ▴'):''}</th>`).join('')+'</tr>';
+  $('#thead').innerHTML='<tr><th class="chevcell"></th>'+c.cols.map(col=>`<th class="${col.num?'num':''}" data-k="${col.k}">${col.t}${sortKey===col.k?(sortDir<0?' ▾':' ▴'):''}</th>`).join('')+'</tr>';
   // body
   $('#tbody').innerHTML=shown.map((r,idx)=>{
-    let tr=`<tr data-i="${idx}">`+c.cols.map(col=>{
+    const isOpen = expanded===r;
+    let tds = `<td class="chevcell"><button class="chev" title="Ver contrapartes">${isOpen?'▾':'▸'}</button></td>`;
+    tds += c.cols.map(col=>{
       let v=r[col.k];
       if(col.k==='leyes')return `<td>${leyTag(v)}</td>`;
-      if(col.en)return `<td><span class="en">${v}</span></td>`;
+      if(col.k==='nombre')return `<td><span class="celltext en">${esc(v)}</span><button class="copybtn" title="Copiar nombre">${COPYICON}</button></td>`;
+      if(col.k==='rut')return v?`<td><span class="celltext">${esc(v)}</span><button class="copybtn" title="Copiar RUT">${COPYICON}</button></td>`:`<td><span class="mini">—</span></td>`;
+      if(col.en)return `<td><span class="celltext en">${esc(v)}</span></td>`;
       if(col.num)return `<td class="num">${col.fmt?col.fmt(v):v}</td>`;
-      return `<td>${v||'<span class=mini>—</span>'}</td>`;
-    }).join('')+'</tr>';
-    if(expanded===r){
+      return `<td><span class="celltext">${esc(v)||'<span class=mini>—</span>'}</span></td>`;
+    }).join('');
+    let tr=`<tr data-i="${idx}">`+tds+'</tr>';
+    if(isOpen){
       const cps=r[c.cp]||[];
-      const inner = cps.length? cps.map(p=>`<div class="cp"><div class="cpn">${p.nombre}</div><div class="cpa">${CL(p.monto)}</div><div class="cpa mini">${NUM(p.n)} donac.</div></div>`).join(''):'<div class="mini">Sin contrapartes identificadas en el registro.</div>';
-      tr+=`<tr class="expand"><td colspan="${c.cols.length}"><div class="expwrap"><div class="h">${c.cph}</div>${inner}</div></td></tr>`;
+      const inner = cps.length? cps.map(p=>`<div class="cp"><div class="cpn">${esc(p.nombre)}</div><div class="cpa">${CL(p.monto)}</div><div class="cpa mini">${NUM(p.n)} donac.</div></div>`).join(''):'<div class="mini">Sin contrapartes identificadas en el registro.</div>';
+      tr+=`<tr class="expand"><td colspan="${c.cols.length+1}"><div class="expwrap"><div class="h">${c.cph}</div>${inner}</div></td></tr>`;
     }
     return tr;
   }).join('');
@@ -320,7 +346,14 @@ function render(){
 }
 $('#thead').addEventListener('click',e=>{const k=e.target.closest('th')?.dataset.k;if(!k)return;
   if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==='nombre'||k==='rut'||k==='leyes')?1:-1;}render();});
-$('#tbody').addEventListener('click',e=>{const tr=e.target.closest('tr[data-i]');if(!tr)return;
+$('#tbody').addEventListener('click',e=>{
+  // copy buttons: copy the cell text, never toggle the row
+  const cp=e.target.closest('.copybtn');
+  if(cp){e.stopPropagation();const cell=cp.closest('td');const span=cell.querySelector('.celltext');if(span)copyText(span.textContent.trim());return;}
+  // if the user is selecting text (to copy manually), don't toggle
+  const sel=window.getSelection?window.getSelection().toString():'';
+  if(sel&&sel.trim().length>0) return;
+  const tr=e.target.closest('tr[data-i]');if(!tr)return;
   const c=cfg[view];const q=$('#search').value.trim().toLowerCase();const fl=$('#fley').value;
   let rows=c.data; if(fl)rows=rows.filter(r=>r.leyes.includes(fl));
   if(q)rows=rows.filter(r=>r.nombre.toLowerCase().includes(q)||(r.rut||'').toLowerCase().includes(q));
@@ -334,7 +367,7 @@ $('#fley').addEventListener('change',()=>{expanded=null;render();});
 render();
 
 // ---------- proyectos ----------
-$('#proytb').innerHTML=D.proyectos_top.map(p=>`<tr><td><span class="en">${p.proyecto}</span></td><td>${p.donataria||'—'}</td><td class="num">${CL(p.monto)}</td><td class="num">${NUM(p.n)}</td><td class="num">${NUM(p.n_donantes)}</td></tr>`).join('');
+$('#proytb').innerHTML=D.proyectos_top.map(p=>`<tr><td><span class="celltext en">${esc(p.proyecto)}</span></td><td><span class="celltext">${esc(p.donataria)||'—'}</span></td><td class="num">${CL(p.monto)}</td><td class="num">${NUM(p.n)}</td><td class="num">${NUM(p.n_donantes)}</td></tr>`).join('');
 
 // ---------- method ----------
 $('#method').innerHTML=`

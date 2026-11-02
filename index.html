@@ -256,7 +256,7 @@ $('#genbadge').textContent='Actualizado a datos del '+meta.generado;
 const la=D.por_ley_anio;
 function grouped(el, field, fmt){
   const years=[...new Set(la.map(x=>x.anio))].sort();
-  const max=Math.max(...la.map(x=>x[field]));
+  const max = Math.max(0, ...la.map(x=>x[field] || 0));
   let h='<div class="rowbar">';
   years.forEach(y=>{
     ['19.885','21.440'].forEach(l=>{
@@ -278,7 +278,7 @@ grouped($('#barN'),'n', v=>NUM(v));
   const months=[...new Set(S.map(d=>d.ym))].sort();
   const W=920,H=300,PL=64,PR=16,PT=16,PB=34;
   const iw=W-PL-PR, ih=H-PT-PB;
-  const max=Math.max(...S.map(d=>d.monto))*1.05;
+  const max = Math.max(0, ...S.map(d => d.monto || 0)) * 1.05;
   const x=i=>PL+ (months.length<2?iw/2: i/(months.length-1)*iw);
   const y=v=>PT+ih - v/max*ih;
   const series=['19.885','21.440'].map(l=>({l, pts:months.map((m,i)=>{
@@ -347,14 +347,14 @@ function render(){
   // body
   $('#tbody').innerHTML=shown.map((r,idx)=>{
     let tds = `<td class="chevcell"><button class="chev" title="Ver todo el detalle">▸</button></td>`;
-    tds += c.cols.map(col=>{
-      let v=r[col.k];
-      if(col.k==='leyes')return `<td>${leyTag(v)}</td>`;
-      if(col.k==='nombre')return `<td><span class="celltext en">${esc(v)}</span><button class="copybtn" title="Copiar nombre">${COPYICON}</button></td>`;
-      if(col.k==='rut')return v?`<td><span class="celltext">${esc(v)}</span><button class="copybtn" title="Copiar RUT">${COPYICON}</button></td>`:`<td><span class="mini">—</span></td>`;
-      if(col.en)return `<td><span class="celltext en">${esc(v)}</span></td>`;
-      if(col.num)return `<td class="num">${col.fmt?col.fmt(v):v}</td>`;
-      return `<td><span class="celltext">${esc(v)||'<span class=mini>—</span>'}</span></td>`;
+  tds += c.cols.map(col=>{
+      let v = r[col.k] || ''; 
+      if(col.k==='leyes') return `<td>${v ? leyTag(v) : '<span class="mini">—</span>'}</td>`;
+      if(col.k==='nombre') return `<td><span class="celltext en">${esc(v)}</span>${v ? `<button class="copybtn" title="Copiar nombre">${COPYICON}</button>` : ''}</td>`;
+      if(col.k==='rut') return v ? `<td><span class="celltext">${esc(v)}</span><button class="copybtn" title="Copiar RUT">${COPYICON}</button></td>` : `<td><span class="mini">—</span></td>`;
+      if(col.en) return `<td><span class="celltext en">${esc(v)}</span></td>`;
+      if(col.num) return `<td class="num">${col.fmt ? col.fmt(v || 0) : (v || '')}</td>`;
+      return `<td><span class="celltext">${esc(v) || '<span class=mini>—</span>'}</span></td>`;
     }).join('');
     return `<tr data-key="${esc(r.key)}" data-nombre="${esc(r.nombre)}" data-n="${r.n}">`+tds+'</tr>';
   }).join('');
@@ -479,8 +479,15 @@ $('#fley').addEventListener('change',()=>{expanded=null;render();});
 render();
 
 // ---------- proyectos ----------
-$('#proytb').innerHTML=D.proyectos_top.map(p=>`<tr><td><span class="celltext en">${esc(p.proyecto)}</span></td><td><span class="celltext">${esc(p.donataria)||'—'}</span></td><td class="num">${CL(p.monto)}</td><td class="num">${NUM(p.n)}</td><td class="num">${NUM(p.n_donantes)}</td></tr>`).join('');
-
+$('#proytb').innerHTML = D.proyectos_top.map(p=>`
+  <tr>
+    <td><span class="celltext en">${esc(p.proyecto || '')}</span></td>
+    <td><span class="celltext">${esc(p.donataria || '') || '—'}</span></td>
+    <td class="num">${p.monto ? CL(p.monto) : '—'}</td>
+    <td class="num">${p.n ? NUM(p.n) : '—'}</td>
+    <td class="num">${p.n_donantes ? NUM(p.n_donantes) : '—'}</td>
+  </tr>
+`).join('');
 // ---------- method ----------
 $('#method').innerHTML=`
 <p style="margin-top:0">Se consolidaron <b>4 planillas</b> con un total de <b>${NUM(meta.total_donaciones)}</b> registros de donaciones de los años 2024 y 2025:</p>

@@ -1,32 +1,52 @@
-import pandas as pd
 import pyarrow.feather as feather
 import json, re
+import pandas as pd
 
-print("Cargando arrowz...")
-# Ahora lo lee directo y descomprime automáticamente
+print("1. Cargando base enriquecida para extraer nombres...")
 df = feather.read_feather('donaciones.arrowz')
 
-df = df.dropna(subset=['dtr_key', 'dnt_key'])
+# Limpiar ruts para armar un diccionario perfecto
+df['dtr_clean'] = df['dtr_key'].astype(str).str.upper().str.replace(r'[^0-9K]', '', regex=True)
+df['dnt_clean'] = df['dnt_key'].astype(str).str.upper().str.replace(r'[^0-9K]', '', regex=True)
 
-print("Calculando agregados...")
-donatarias = df.groupby('dtr_key').agg(nombre=('dtr_nombre', 'first'), rut=('dtr_key', 'first'), monto=('monto', 'sum'), n=('dtr_key', 'count'), n_donantes=('dnt_key', 'nunique')).reset_index(drop=True)
-donatarias['key'] = donatarias['rut'].str.replace(r'[^0-9K]', '', regex=True)
-donatarias = donatarias.sort_values('monto', ascending=False).head(300)
+# Armar un diccionario maestro { '12345678K': 'NOMBRE EMPRESA' }
+dict_dtr = pd.Series(df['dtr_nombre'].values, index=df['dtr_clean']).dropna().to_dict()
+dict_dnt = pd.Series(df['dnt_nombre'].values, index=df['dnt_clean']).dropna().to_dict()
+diccionario = {**dict_dnt, **dict_dtr}
+diccionario = {k: v for k, v in diccionario.items() if k and len(k) >= 6}
 
-donantes = df.groupby('dnt_key').agg(nombre=('dnt_nombre', 'first'), rut=('dnt_key', 'first'), monto=('monto', 'sum'), n=('dnt_key', 'count'), n_donatarias=('dtr_key', 'nunique')).reset_index(drop=True)
-donantes['key'] = donantes['rut'].str.replace(r'[^0-9K]', '', regex=True)
-donantes = donantes.sort_values('monto', ascending=False).head(300)
+print("2. Actualizando index.html de forma quirúrgica...")
+with open('index.html', 'r', encoding='utf-8') as f:
+    html = f.read()
 
-print("Inyectando nombres en index.html...")
-with open('index.html', 'r', encoding='utf-8') as f: html = f.read()
 match = re.search(r'<script id="DATA" type="application/json">(.*?)</script>', html, re.DOTALL)
-
 if match:
     data = json.loads(match.group(1))
-    data['donatarias'] = donatarias.to_dict(orient='records')
-    data['donantes_top'] = donantes.to_dict(orient='records')
-    nuevo_html = html.replace(match.group(1), json.dumps(data, ensure_ascii=False))
-    with open('index.html', 'w', encoding='utf-8') as f: f.write(nuevo_html)
-    print("¡Éxito! index.html actualizado.")
+    
+    # Reemplazar RUTs por Nombres en Donatarias y sus top donantes
+    for d in data.get('donatarias', []):
+        if d.get('key') in diccionario:
+            d['nombre'] = diccionario[d['key']]
+        for td in d.get('top_donantes', []):
+            posible_rut = re.sub(r'[^0-9K]', '', str(td.get('nombre', '')).upper())
+            if posible_rut in diccionario:
+                td['nombre'] = diccionario[posible_rut]
+
+    # Reemplazar RUTs por Nombres en Donantes y sus top donatarias
+    for d in data.get('donantes_top', []):
+        if d.get('key') in diccionario:
+            d['nombre'] = diccionario[d['key']]
+        for td in d.get('top_donatarias', []):
+            posible_rut = re.sub(r'[^0-9K]', '', str(td.get('nombre', '')).upper())
+            if posible_rut in diccionario:
+                td['nombre'] = diccionario[posible_rut]
+
+    # Guardar devolviendo el JSON intacto
+    nuevo_json = json.dumps(data, ensure_ascii=False)
+    nuevo_html = html.replace(match.group(1), nuevo_json)
+    
+    with open('index.html', 'w', encoding='utf-8') as f:
+        f.write(nuevo_html)
+    print("¡Éxito! Nombres inyectados sin romper el código.")
 else:
-    print("Error: No se encontró el bloque DATA.")
+    print("Error: No se encontró el bloque DATA en el HTML.")

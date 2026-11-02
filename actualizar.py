@@ -7,6 +7,7 @@ y donantes (top 300) y principales proyectos, y reescribe index.html en el lugar
 
 import gzip
 import json
+import os
 import re
 from datetime import date
 
@@ -191,7 +192,18 @@ def main():
     with open(ARCHIVO_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"✓ index.html actualizado con datos al {meta['generado']}.")
+    print("5. Generando donaciones.arrow.gz (gzip+IPC stream)…", flush=True)
+    with gzip.open("donaciones.arrow.gz", "wb", compresslevel=6) as f:
+        try:
+            tabla_raw = feather.read_table(ARCHIVO_DONACIONES)
+        except Exception:
+            tabla_raw = pa.Table.from_pandas(df)
+        with pa.ipc.new_stream(f, tabla_raw.schema) as writer:
+            for batch in tabla_raw.to_batches(max_chunksize=65536):
+                writer.write_batch(batch)
+    print(f"   Archivo generado ({os.path.getsize('donaciones.arrow.gz') // 1_000_000} MB)")
+
+    print(f"\n✓ index.html actualizado con datos al {meta['generado']}.")
     print(f"  Donatarias: {len(donatarias)} · Donantes: {len(donantes)} · "
           f"Proyectos: {len(proyectos)}")
     print(f"  Total: ${total_monto // 1_000_000:,} MM · {n_total:,} donaciones".replace(",", "."))
